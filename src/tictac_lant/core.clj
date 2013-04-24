@@ -1,17 +1,60 @@
 (ns tictac-lant.core
   (:import [com.googlecode.lanterna TerminalFacade]
-           [com.googlecode.lanterna.screen Screen]))
+           [com.googlecode.lanterna.screen Screen ScreenWriter ScreenCharacterStyle]))
 
 (defprotocol Device
   "This defines an abstract device that can display a game board and get input"
   (display-board [device board] "displays the game board")
   (get-input [device] "gets the user's next move"))
 
+(defn get-num-key
+  "returns when a number key is pressed with the value of the key"
+  [screen]
+  (Thread/sleep 10)
+  (let [k (.readInput screen)]
+    (if-not k
+      (recur screen)
+      (let [c (.getCharacter k)
+            v (- (int c) (int \0))]
+        (if (and (>= v 0) (<= v 9))
+          v
+          (recur screen))))))
+
+(defn draw-string
+  "draws a string using screen writer, hiding the ugly varargs crap"
+  [sw x y s]
+  (.drawString sw x y s (into-array ScreenCharacterStyle [])))
+
+(defn board-row-to-string
+  [board row]
+  (let [idx (* 3 row)
+        board-part (take 3 (drop idx board))
+        board-chars (map {:X \X :O \O :SPC \space} board-part)]
+    (apply str (cons \| (interleave board-chars (repeat \|))))))
+
 (deftype TerminalDevice
     [^Screen screen]
   Device
-  (display-board [device board] nil)
-  (get-input [device] nil))
+  (display-board [device board]
+     (let [screen (.screen device)
+           sw (ScreenWriter. screen)]
+       (draw-string sw 2 2 "-------")
+       (draw-string sw 2 3 (board-row-to-string board 0))
+       (draw-string sw 2 4 "-------")
+       (draw-string sw 2 5 (board-row-to-string board 1))
+       (draw-string sw 2 6 "-------")
+       (draw-string sw 2 7 (board-row-to-string board 2))
+       (draw-string sw 2 8 "-------")
+       (.refresh screen)))
+
+  (get-input [device] (get-num-key (.screen device))))
+
+(defn new-terminal-device
+  "creates a new terminal device"
+  []
+  (let [screen (TerminalFacade/createScreen)]
+       (.startScreen screen)
+       (->TerminalDevice screen)))
 
 (deftype DebugDevice
     [moves-atom]
@@ -43,8 +86,8 @@
 (defrecord Game
     [board
      ^tictac_lant.core.Device device
-     ^tictac_lant.core.Player player1
-     ^tictac_lant.core.Player player2])
+     ^tictac_lant.core.Player playerX
+     ^tictac_lant.core.Player playerO])
 
 (defn new-board
   "creates a new, empty board"
@@ -54,11 +97,9 @@
 (defn init-game
   "initialises a new game"
   ([]
-     (let [screen (TerminalFacade/createScreen)]
-       (.startScreen screen)
-       (init-game (->TerminalDevice screen) (->HumanPlayer) (->AIPlayer))))
-  ([device player1 player2]
-     (map->Game {:board (new-board) :device device :player1 player1 :player2 player2})))
+     (init-game (new-terminal-device) (->HumanPlayer) (->AIPlayer)))
+  ([device playerX playerO]
+     (map->Game {:board (new-board) :device device :playerX playerX :playerO playerO})))
 
 (defn get-available-moves
   "gets the available moves on the board"
