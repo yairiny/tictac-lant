@@ -77,18 +77,6 @@
     (display-board device board)
     (get-input device)))
 
-(deftype AIPlayer
-    []
-  Player
-  (get-next-move [player board device]
-    1))
-
-(defrecord Game
-    [board
-     ^tictac_lant.core.Device device
-     ^tictac_lant.core.Player playerX
-     ^tictac_lant.core.Player playerO])
-
 (defn new-board
   "creates a new, empty board"
   []
@@ -150,3 +138,44 @@
         num-good-tokens (count (filter #{token} board))
         num-bad-tokens (- total-tokens num-good-tokens)]
     (+ (* 100 (- num-good-wins num-bad-wins)) (- num-good-tokens num-bad-tokens))))
+
+(defn flip
+  "flips the token"
+  [token]
+  (token {:X :O :O :X}))
+
+(defn get-minmax-move
+  "gets the minmaxed move"
+  [board max? last-token depth]
+  (let [next-token (flip last-token)
+        board-val (eval-board board (if max? next-token last-token))]
+    (if (or (zero? depth) (> (Math/abs board-val) 90))
+      {:score board-val :board board}
+      (let [available-moves (get-available-moves board)
+        pos-boards
+        (map (fn [move]
+               {:move move :board (make-move board move next-token)}) available-moves)
+        scored-boards
+        (map #(assoc % :score
+                     (:score (get-minmax-move (:board %) (not max?) next-token (dec depth))))
+             pos-boards)
+        sorter (if max? (comp reverse sort-by) sort-by)]
+    (first (sorter :score scored-boards))))))
+
+(deftype AIPlayer
+    [token]
+  Player
+  (get-next-move [player board device]
+    (let [token (flip (.token player))]
+      (:move (get-minmax-move board true token (min (count (get-available-moves board)) 4))))))
+
+(defn run-game
+  "runs the game"
+  ([board device playerX playerO]
+     (run-game board device playerX playerO :X))
+  ([board device player player-other token]
+     (let [move (get-next-move player board device)
+           new-board (make-move board move token)]
+       (if-not (is-game-over? new-board)
+         (recur new-board device player-other player (flip token))
+         (display-board device new-board)))))
